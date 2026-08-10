@@ -34,7 +34,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.9.3")
     
-    // ADB Native Engine
-    implementation("com.mobile-native-foundation.dadb:dadb:1.2.6")
+    // ADB Native Engine (Maven Central)
+    implementation("com.mobile-native-foundation.dadb:dadb:1.2.6") {
+        isTransitive = true
+    }
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

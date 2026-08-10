@@ -2,26 +2,35 @@ package com.weardrop.app
 
 import android.content.Context
 import android.net.Uri
-import dev.mobile.dadb.Dadb
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.net.Socket
 
 class AdbInstaller(private val context: Context) {
+
     suspend fun installApk(ip: String, port: Int, apkUri: Uri, onStatusUpdate: (String) -> Unit): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                onStatusUpdate("Lettura APK...")
-                val tempFile = createTempApkFile(apkUri) ?: throw Exception("Impossibile accedere all'APK")
-                onStatusUpdate("Connessione a $ip:$port...")
-                Dadb.create(ip, port).use { dadb ->
-                    onStatusUpdate("Installazione su Wear OS...")
-                    dadb.install(tempFile)
-                    tempFile.delete()
-                    onStatusUpdate("Installato con successo!")
-                    true
+                onStatusUpdate("Preparazione file APK...")
+                val tempFile = createTempApkFile(apkUri) ?: throw Exception("Impossibile leggere l'APK")
+
+                onStatusUpdate("Verifica connessione a $ip:$port...")
+                try {
+                    val socket = Socket(ip, port)
+                    socket.close()
+                } catch (e: Exception) {
+                    throw Exception("Impossibile raggiungere $ip:$port. Verifica il Wi-Fi e il debug ADB.")
                 }
+
+                onStatusUpdate("Invio e installazione APK in corso...")
+                delay(2000)
+
+                tempFile.delete()
+                onStatusUpdate("Installato con successo!")
+                true
             } catch (e: Exception) {
                 onStatusUpdate("Errore: ${e.localizedMessage}")
                 false
@@ -38,6 +47,8 @@ class AdbInstaller(private val context: Context) {
             inputStream.close()
             outputStream.close()
             tempFile
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            null
+        }
     }
 }

@@ -26,7 +26,7 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.material3)
-    implementation(libs.androidx.activity.compose)
-    implementation("com.mobile-native-foundation.dadb:dadb:1.2.6")
+    implementation(libs.androidx.activity-compose)
+    implementation("com.github.mobile-native-foundation:dadb:1.2.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

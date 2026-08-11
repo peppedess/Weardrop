@@ -2,32 +2,70 @@ package com.peppedess.weardrop
 
 import android.content.Context
 import android.net.Uri
-import dadb.AdbKeyPair
-import dadb.Dadb
+import io.github.muntashirakon.adb.AdbStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
-/**
- * Esito di una operazione ADB.
- */
 sealed interface AdbOutcome {
     data class Ok(val message: String) : AdbOutcome
     data class Error(val message: String) : AdbOutcome
 }
 
 /**
- * Helper che gestisce l'intero ciclo:
- *  1. copia dell'APK selezionato (content:// Uri) in un file temporaneo di cache
- *  2. apertura del socket ADB verso lo smartwatch tramite Dadb.create(ip, port)
- *  3. esecuzione di dadb.install(tempFile)
+ * Gestisce abbinamento, connessione e installazione.
  *
- * Tutto viene eseguito su Dispatchers.IO; i log vengono riportati sul Main.
+ * L'installazione usa il servizio "exec:" con "cmd package install -S <size>":
+ * e' lo stesso meccanismo dello streamed install di adb. Indicando la
+ * dimensione esatta, il package manager sa quando smettere di leggere e non
+ * serve chiudere lo stdin dello stream.
  */
 class AdbInstaller(private val context: Context) {
 
     // ---------------------------------------------------------------- public
+
+    suspend fun pair(
+        host: String,
+        pairingPort: Int,
+        pairingCode: String,
+        onLog: suspend (String) -> Unit
+    ): AdbOutcome = withContext(Dispatchers.IO) {
+        try {
+            emit(onLog, "Abbinamento con $host:$pairingPort...")
+            val manager = WearDropAdbManager.getInstance(context)
+            val paired = manager.pair(host, pairingPort, pairingCode)
+            if (paired) {
+                emit(onLog, "Abbinamento riuscito.")
+                AdbOutcome.Ok("Orologio abbinato")
+            } else {
+                emit(onLog, "Abbinamento rifiutato.")
+                AdbOutcome.Error("Codice errato o dialog chiuso sull'orologio")
+            }
+        } catch (t: Throwable) {
+            val reason = describe(t)
+            emit(onLog, "ERRORE: $reason")
+            AdbOutcome.Error(reason)
+        }
+    }
+
+    suspend fun testConnection(
+        host: String,
+        port: Int,
+        onLog: suspend (String) -> Unit
+    ): AdbOutcome = withContext(Dispatchers.IO) {
+        try {
+            val manager = connect(host, port, onLog)
+            val model = runShell(manager, "getprop ro.product.model").trim()
+            val release = runShell(manager, "getprop ro.build.version.release").trim()
+            emit(onLog, "Connesso a: $model (Android $release)")
+            AdbOutcome.Ok("Connesso a $model")
+        } catch (t: Throwable) {
+            val reason = describe(t)
+            emit(onLog, "ERRORE: $reason")
+            AdbOutcome.Error(reason)
+        }
+    }
 
     suspend fun install(
         apkUri: Uri,
@@ -42,23 +80,17 @@ class AdbInstaller(private val context: Context) {
             temp = payload
             emit(onLog, "Pacchetto pronto: ${formatSize(payload.length())}")
 
-            emit(onLog, "Apertura socket ADB su $host:$port...")
-            Dadb.create(host, port, keyPairOrNull()).use { dadb ->
-                emit(onLog, "Handshake completato, dispositivo autorizzato.")
+            val manager = connect(host, port, onLog)
+            val response = streamInstall(manager, payload, onLog)
 
-                val model = runCatching {
-                    dadb.shell("getprop ro.product.model").output.trim()
-                }.getOrNull()
-                if (!model.isNullOrBlank()) {
-                    emit(onLog, "Dispositivo: $model")
-                }
-
-                emit(onLog, "Trasferimento e installazione in corso...")
-                dadb.install(payload)
+            if (response.contains("Success", ignoreCase = true)) {
+                emit(onLog, "Installazione completata.")
+                AdbOutcome.Ok("APK installato sullo smartwatch")
+            } else {
+                val clean = response.trim().ifBlank { "nessuna risposta dal package manager" }
+                emit(onLog, "Rifiutato: $clean")
+                AdbOutcome.Error(describeInstall(clean))
             }
-
-            emit(onLog, "Installazione terminata con successo.")
-            AdbOutcome.Ok("APK installato sullo smartwatch")
         } catch (t: Throwable) {
             val reason = describe(t)
             emit(onLog, "ERRORE: $reason")
@@ -68,46 +100,73 @@ class AdbInstaller(private val context: Context) {
         }
     }
 
-    suspend fun testConnection(
+    // --------------------------------------------------------------- private
+
+    private suspend fun connect(
         host: String,
         port: Int,
         onLog: suspend (String) -> Unit
-    ): AdbOutcome = withContext(Dispatchers.IO) {
-        try {
-            emit(onLog, "Apertura socket ADB su $host:$port...")
-            Dadb.create(host, port, keyPairOrNull()).use { dadb ->
-                val model = dadb.shell("getprop ro.product.model").output.trim()
-                val release = dadb.shell("getprop ro.build.version.release").output.trim()
-                emit(onLog, "Connesso a: $model (Android $release)")
-                AdbOutcome.Ok("Connesso a $model")
+    ): WearDropAdbManager {
+        val manager = WearDropAdbManager.getInstance(context)
+        if (!manager.isConnected) {
+            emit(onLog, "Connessione a $host:$port...")
+            if (!manager.connect(host, port)) {
+                throw IllegalStateException("Connessione rifiutata dal daemon ADB")
             }
-        } catch (t: Throwable) {
-            val reason = describe(t)
-            emit(onLog, "ERRORE: $reason")
-            AdbOutcome.Error(reason)
+            emit(onLog, "Canale TLS stabilito.")
+        }
+        return manager
+    }
+
+    private fun runShell(manager: WearDropAdbManager, command: String): String {
+        val stream: AdbStream = manager.openStream("shell:$command")
+        try {
+            return stream.openInputStream().bufferedReader().readText()
+        } finally {
+            runCatching { stream.close() }
         }
     }
 
-    // --------------------------------------------------------------- private
+    private suspend fun streamInstall(
+        manager: WearDropAdbManager,
+        apk: File,
+        onLog: suspend (String) -> Unit
+    ): String {
+        val size = apk.length()
+        emit(onLog, "Avvio streamed install...")
+
+        val stream: AdbStream = manager.openStream("exec:cmd package install -r -t -S $size")
+        try {
+            val output = stream.openOutputStream()
+            var sent = 0L
+            var lastPercent = 0
+
+            apk.inputStream().use { source ->
+                val buffer = ByteArray(CHUNK)
+                while (true) {
+                    val read = source.read(buffer)
+                    if (read <= 0) break
+                    output.write(buffer, 0, read)
+                    sent += read
+
+                    val percent = ((sent * 100) / size).toInt()
+                    if (percent >= lastPercent + 20) {
+                        lastPercent = percent
+                        emit(onLog, "Trasferimento: $percent%")
+                    }
+                }
+            }
+            output.flush()
+            emit(onLog, "Trasferimento completato, attendo il package manager...")
+
+            return stream.openInputStream().bufferedReader().readText()
+        } finally {
+            runCatching { stream.close() }
+        }
+    }
 
     private suspend fun emit(onLog: suspend (String) -> Unit, message: String) {
         withContext(Dispatchers.Main) { onLog(message) }
-    }
-
-    /**
-     * La chiave RSA viene generata una sola volta e conservata nello storage
-     * privato dell'app: cosi' il prompt "Consenti debug USB" appare una volta sola.
-     */
-    private fun keyPairOrNull(): AdbKeyPair? = try {
-        val dir = File(context.filesDir, "adb").apply { mkdirs() }
-        val priv = File(dir, "adbkey")
-        val pub = File(dir, "adbkey.pub")
-        if (!priv.exists() || !pub.exists()) {
-            AdbKeyPair.generate(priv, pub)
-        }
-        AdbKeyPair.read(priv, pub)
-    } catch (t: Throwable) {
-        null
     }
 
     private fun copyToCache(uri: Uri): File {
@@ -120,7 +179,7 @@ class AdbInstaller(private val context: Context) {
 
         input.use { source ->
             FileOutputStream(target).use { sink ->
-                source.copyTo(sink, DEFAULT_BUFFER)
+                source.copyTo(sink, CHUNK)
                 sink.flush()
             }
         }
@@ -136,21 +195,31 @@ class AdbInstaller(private val context: Context) {
         val raw = t.message?.takeIf { it.isNotBlank() } ?: t.javaClass.simpleName
         return when {
             raw.contains("ECONNREFUSED", true) ->
-                "Connessione rifiutata: verifica che il debug wireless sia attivo sull'orologio"
+                "Porta chiusa: ricorda che la porta di connessione e' diversa da quella del pairing"
             raw.contains("ETIMEDOUT", true) || raw.contains("timeout", true) ->
                 "Timeout: orologio non raggiungibile su questa rete Wi-Fi"
             raw.contains("EHOSTUNREACH", true) || raw.contains("ENETUNREACH", true) ->
                 "Host non raggiungibile: telefono e orologio devono stare sulla stessa rete"
-            raw.contains("device unauthorized", true) || raw.contains("auth", true) ->
-                "Autorizzazione negata: accetta il prompt di debug sull'orologio e riprova"
-            raw.contains("INSTALL_FAILED_VERSION_DOWNGRADE", true) ->
-                "Installazione rifiutata: versione piu' vecchia di quella gia' presente"
-            raw.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE", true) ->
-                "Firma incompatibile: disinstalla prima la versione presente sull'orologio"
-            raw.contains("INSTALL_FAILED_NO_MATCHING_ABIS", true) ->
-                "ABI non compatibile con il processore dell'orologio"
+            raw.contains("PairingRequired", true) || raw.contains("pairing", true) ->
+                "Abbinamento mancante o scaduto: rifai il pairing con un nuovo codice"
+            raw.contains("AuthenticationFailed", true) ->
+                "Autenticazione rifiutata dal daemon ADB dell'orologio"
             else -> raw
         }
+    }
+
+    private fun describeInstall(raw: String): String = when {
+        raw.contains("INSTALL_FAILED_VERSION_DOWNGRADE", true) ->
+            "Versione piu' vecchia di quella gia' installata"
+        raw.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE", true) ->
+            "Firma incompatibile: disinstalla prima la versione presente"
+        raw.contains("INSTALL_FAILED_NO_MATCHING_ABIS", true) ->
+            "ABI non compatibile con il processore dell'orologio"
+        raw.contains("INSTALL_FAILED_INSUFFICIENT_STORAGE", true) ->
+            "Spazio insufficiente sull'orologio"
+        raw.contains("INSTALL_PARSE_FAILED", true) ->
+            "APK non valido o corrotto"
+        else -> raw.take(160)
     }
 
     private fun formatSize(bytes: Long): String = when {
@@ -160,6 +229,6 @@ class AdbInstaller(private val context: Context) {
     }
 
     private companion object {
-        const val DEFAULT_BUFFER = 64 * 1024
+        const val CHUNK = 64 * 1024
     }
 }

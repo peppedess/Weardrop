@@ -15,7 +15,7 @@ android {
 
         val runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
         versionCode = runNumber
-        versionName = "1.0.$runNumber"
+        versionName = "2.0.$runNumber"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -51,25 +51,22 @@ android {
     }
 
     // -------------------------------------------------------------------
-    //  FONDAMENTALE: DADB e le sue dipendenze transitive portano diversi
-    //  file duplicati in META-INF che fanno fallire :app:mergeDebugJavaResource
+    //  Oltre ai duplicati META-INF, BouncyCastle porta i file di firma
+    //  del JAR (*.SF / *.DSA / *.RSA) che fanno fallire il merge.
     // -------------------------------------------------------------------
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/LICENSE"
             excludes += "META-INF/LICENSE*"
-            excludes += "META-INF/LICENSE.txt"
-            excludes += "META-INF/LICENSE.md"
-            excludes += "META-INF/LICENSE-notice.md"
             excludes += "META-INF/NOTICE"
             excludes += "META-INF/NOTICE*"
-            excludes += "META-INF/NOTICE.txt"
-            excludes += "META-INF/NOTICE.md"
-            excludes += "META-INF/*.version"
             excludes += "META-INF/DEPENDENCIES"
             excludes += "META-INF/INDEX.LIST"
-            excludes += "META-INF/io.netty.versions.properties"
+            excludes += "META-INF/*.version"
+            excludes += "META-INF/*.SF"
+            excludes += "META-INF/*.DSA"
+            excludes += "META-INF/*.RSA"
             excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
@@ -92,8 +89,12 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Engine ADB puro Kotlin/JVM - disponibile su Maven Central
-    implementation("dev.mobile:dadb:1.2.6")
+    // Engine ADB con supporto pairing Android 11+ (solo su JitPack)
+    implementation("com.github.MuntashirAkon:libadb-android:1.0.1")
+
+    // Necessaria per generare il certificato X509 richiesto dal pairing
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.78.1")
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.78.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

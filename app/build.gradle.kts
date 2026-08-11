@@ -26,6 +26,15 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/LICENSE*"
+            excludes += "/META-INF/NOTICE*"
+            excludes += "/META-INF/*.version"
+        }
+    }
 }
 
 dependencies {
@@ -35,6 +44,5 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     
-    // DADB da Maven Central (group ufficiale dev.mobile)
     implementation("dev.mobile:dadb:1.2.6")
 }

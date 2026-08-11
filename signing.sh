@@ -1,3 +1,53 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  WearDrop - keystore persistente
+#  Firma debug e release con la stessa chiave, cosi' ogni APK prodotto dalla
+#  CI si installa come aggiornamento sopra il precedente.
+#  Il versionCode e' gia' legato a GITHUB_RUN_NUMBER, quindi cresce da solo.
+# =============================================================================
+set -euo pipefail
+
+KEYSTORE="weardrop.jks"
+ALIAS="weardrop"
+STOREPASS="weardrop2026"
+
+if [ ! -f settings.gradle.kts ]; then
+    echo "ERRORE: esegui lo script dalla root del progetto WearDrop."
+    exit 1
+fi
+
+echo "==> WearDrop :: keystore persistente"
+
+# ============================================================================
+#  1. Generazione keystore (solo se assente: rigenerarlo romperebbe la
+#     continuita' degli aggiornamenti)
+# ============================================================================
+if [ -f "${KEYSTORE}" ]; then
+    echo "    ${KEYSTORE} gia' presente, lo lascio intatto."
+else
+    if ! command -v keytool >/dev/null 2>&1; then
+        echo "ERRORE: keytool non trovato. Serve un JDK nel Codespace."
+        echo "        Prova con: sudo apt-get install -y default-jdk"
+        exit 1
+    fi
+    echo "    Genero ${KEYSTORE}..."
+    keytool -genkeypair \
+        -keystore "${KEYSTORE}" \
+        -alias "${ALIAS}" \
+        -keyalg RSA \
+        -keysize 2048 \
+        -validity 10000 \
+        -storepass "${STOREPASS}" \
+        -keypass "${STOREPASS}" \
+        -dname "CN=peppedess, OU=WearDrop, O=peppedess, L=Milano, C=IT" \
+        >/dev/null 2>&1
+    echo "    Fatto."
+fi
+
+# ============================================================================
+#  2. app/build.gradle.kts
+# ============================================================================
+cat << 'EOF' > app/build.gradle.kts
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -131,3 +181,41 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+EOF
+
+# ============================================================================
+#  3. .gitignore - il keystore DEVE essere committato
+# ============================================================================
+cat << 'EOF' > .gitignore
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# Il keystore di WearDrop va committato: e' cio' che rende ogni build
+# un aggiornamento della precedente invece di una installazione nuova.
+!weardrop.jks
+EOF
+
+# ============================================================================
+#  4. Verifica
+# ============================================================================
+echo ""
+if [ -f "${KEYSTORE}" ]; then
+    echo "==> Impronta della chiave:"
+    keytool -list -v -keystore "${KEYSTORE}" -storepass "${STOREPASS}" 2>/dev/null \
+        | grep -i "SHA256:" | head -1 || echo "    (non leggibile)"
+fi
+echo ""
+echo "==> Fatto. Da ora ogni APK della CI e' firmato con la stessa chiave."
+echo "    ATTENZIONE: la prima installazione dopo questo cambio richiede"
+echo "    di disinstallare WearDrop dal telefono, perche' la firma passa"
+echo "    dalla chiave debug a questa. Dalla successiva, sempre aggiornamenti."
+echo ""

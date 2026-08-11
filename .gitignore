@@ -9,5 +9,7 @@ captures/
 .cxx/
 *.apk
 *.aab
-*.keystore
-!gradle/wrapper/gradle-wrapper.jar
+
+# Il keystore di WearDrop va committato: e' cio' che rende ogni build
+# un aggiornamento della precedente invece di una installazione nuova.
+!weardrop.jks

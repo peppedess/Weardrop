@@ -92,9 +92,10 @@ dependencies {
     // Engine ADB con supporto pairing Android 11+ (solo su JitPack)
     implementation("com.github.MuntashirAkon:libadb-android:1.0.1")
 
-    // Necessaria per generare il certificato X509 richiesto dal pairing
-    implementation("org.bouncycastle:bcpkix-jdk15to18:1.78.1")
-    implementation("org.bouncycastle:bcprov-jdk15to18:1.78.1")
+    // bcprov arriva gia' come dipendenza transitiva di libadb-android
+    // (jdk15on:1.69): aggiungere jdk15to18 creerebbe classi duplicate.
+    // Serve solo bcpkix, nella variante allineata.
+    implementation("org.bouncycastle:bcpkix-jdk15on:1.69")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

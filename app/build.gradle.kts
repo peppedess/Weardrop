@@ -35,6 +35,6 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     
-    // Versione corretta della libreria DADB
-    implementation("io.github.mobile-native-foundation:dadb:1.2.6")
+    // ADB Client nativo Java/Kotlin garantito su MavenCentral
+    implementation("com.tananaev:adblib:1.3")
 }

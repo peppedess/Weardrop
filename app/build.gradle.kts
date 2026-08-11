@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,16 +8,16 @@ plugins {
 
 android {
     namespace = "com.peppedess.weardrop"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.peppedess.weardrop"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
 
         val runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
         versionCode = runNumber
-        versionName = "2.0.$runNumber"
+        versionName = "3.0.$runNumber"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -42,18 +44,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
     }
 
-    // -------------------------------------------------------------------
-    //  Oltre ai duplicati META-INF, BouncyCastle porta i file di firma
-    //  del JAR (*.SF / *.DSA / *.RSA) che fanno fallire il merge.
-    // -------------------------------------------------------------------
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -72,29 +66,44 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
+    val composeBom = platform("androidx.compose:compose-bom:2025.12.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
+    implementation("androidx.activity:activity-compose:1.11.0")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-core")
+
+    // ATTENZIONE: le API M3 Expressive (MaterialExpressiveTheme, LoadingIndicator,
+    // LinearWavyProgressIndicator) sono pubbliche SOLO nel ramo 1.5.0-alpha.
+    // La 1.4.x stabile le ha rese interne. Non alzare oltre alpha18 senza
+    // verificare le release note: dalla alpha19 servono AGP 9.1 e SDK 37.
+    implementation("androidx.compose.material3:material3:1.5.0-alpha12")
+
+    // material3 1.4+ non porta piu' material-icons-core in transitivo
+    implementation("androidx.compose.material:material-icons-core:1.7.8")
+
+    // Forme poligonali morphing (stabile)
+    implementation("androidx.graphics:graphics-shapes:1.0.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Engine ADB con supporto pairing Android 11+ (solo su JitPack)
     implementation("com.github.MuntashirAkon:libadb-android:1.0.1")
 
     // bcprov arriva gia' come dipendenza transitiva di libadb-android
     // (jdk15on:1.69): aggiungere jdk15to18 creerebbe classi duplicate.
-    // Serve solo bcpkix, nella variante allineata.
     implementation("org.bouncycastle:bcpkix-jdk15on:1.69")
 
     debugImplementation("androidx.compose.ui:ui-tooling")

@@ -32,14 +32,14 @@ class AdbInstaller(private val context: Context) {
         onLog: suspend (String) -> Unit
     ): AdbOutcome = withContext(Dispatchers.IO) {
         try {
-            emit(onLog, "Abbinamento con $host:$pairingPort...")
+            emit(onLog, "Abbinamento con $host:$pairingPort")
             val manager = WearDropAdbManager.getInstance(context)
             val paired = manager.pair(host, pairingPort, pairingCode)
             if (paired) {
-                emit(onLog, "Abbinamento riuscito.")
+                emit(onLog, "Abbinamento riuscito")
                 AdbOutcome.Ok("Orologio abbinato")
             } else {
-                emit(onLog, "Abbinamento rifiutato.")
+                emit(onLog, "Abbinamento rifiutato")
                 AdbOutcome.Error("Codice errato o dialog chiuso sull'orologio")
             }
         } catch (t: Throwable) {
@@ -58,7 +58,7 @@ class AdbInstaller(private val context: Context) {
             val manager = connect(host, port, onLog)
             val model = runShell(manager, "getprop ro.product.model").trim()
             val release = runShell(manager, "getprop ro.build.version.release").trim()
-            emit(onLog, "Connesso a: $model (Android $release)")
+            emit(onLog, "Connesso a $model (Android $release)")
             AdbOutcome.Ok("Connesso a $model")
         } catch (t: Throwable) {
             val reason = describe(t)
@@ -71,20 +71,21 @@ class AdbInstaller(private val context: Context) {
         apkUri: Uri,
         host: String,
         port: Int,
-        onLog: suspend (String) -> Unit
+        onLog: suspend (String) -> Unit,
+        onProgress: suspend (Float) -> Unit
     ): AdbOutcome = withContext(Dispatchers.IO) {
         var temp: File? = null
         try {
-            emit(onLog, "Copia del pacchetto nella cache locale...")
+            emit(onLog, "Copia del pacchetto nella cache locale")
             val payload = copyToCache(apkUri)
             temp = payload
             emit(onLog, "Pacchetto pronto: ${formatSize(payload.length())}")
 
             val manager = connect(host, port, onLog)
-            val response = streamInstall(manager, payload, onLog)
+            val response = streamInstall(manager, payload, onLog, onProgress)
 
             if (response.contains("Success", ignoreCase = true)) {
-                emit(onLog, "Installazione completata.")
+                emit(onLog, "Installazione completata")
                 AdbOutcome.Ok("APK installato sullo smartwatch")
             } else {
                 val clean = response.trim().ifBlank { "nessuna risposta dal package manager" }
@@ -109,11 +110,11 @@ class AdbInstaller(private val context: Context) {
     ): WearDropAdbManager {
         val manager = WearDropAdbManager.getInstance(context)
         if (!manager.isConnected) {
-            emit(onLog, "Connessione a $host:$port...")
+            emit(onLog, "Connessione a $host:$port")
             if (!manager.connect(host, port)) {
                 throw IllegalStateException("Connessione rifiutata dal daemon ADB")
             }
-            emit(onLog, "Canale TLS stabilito.")
+            emit(onLog, "Canale TLS stabilito")
         }
         return manager
     }
@@ -130,16 +131,16 @@ class AdbInstaller(private val context: Context) {
     private suspend fun streamInstall(
         manager: WearDropAdbManager,
         apk: File,
-        onLog: suspend (String) -> Unit
+        onLog: suspend (String) -> Unit,
+        onProgress: suspend (Float) -> Unit
     ): String {
         val size = apk.length()
-        emit(onLog, "Avvio streamed install...")
+        emit(onLog, "Avvio streamed install")
 
         val stream: AdbStream = manager.openStream("exec:cmd package install -r -t -S $size")
         try {
             val output = stream.openOutputStream()
             var sent = 0L
-            var lastPercent = 0
 
             apk.inputStream().use { source ->
                 val buffer = ByteArray(CHUNK)
@@ -148,16 +149,12 @@ class AdbInstaller(private val context: Context) {
                     if (read <= 0) break
                     output.write(buffer, 0, read)
                     sent += read
-
-                    val percent = ((sent * 100) / size).toInt()
-                    if (percent >= lastPercent + 20) {
-                        lastPercent = percent
-                        emit(onLog, "Trasferimento: $percent%")
-                    }
+                    progress(onProgress, sent.toFloat() / size.toFloat())
                 }
             }
             output.flush()
-            emit(onLog, "Trasferimento completato, attendo il package manager...")
+            progress(onProgress, 1f)
+            emit(onLog, "Trasferimento completato, attendo il package manager")
 
             return stream.openInputStream().bufferedReader().readText()
         } finally {
@@ -167,6 +164,10 @@ class AdbInstaller(private val context: Context) {
 
     private suspend fun emit(onLog: suspend (String) -> Unit, message: String) {
         withContext(Dispatchers.Main) { onLog(message) }
+    }
+
+    private suspend fun progress(onProgress: suspend (Float) -> Unit, value: Float) {
+        withContext(Dispatchers.Main) { onProgress(value.coerceIn(0f, 1f)) }
     }
 
     private fun copyToCache(uri: Uri): File {
@@ -195,15 +196,15 @@ class AdbInstaller(private val context: Context) {
         val raw = t.message?.takeIf { it.isNotBlank() } ?: t.javaClass.simpleName
         return when {
             raw.contains("ECONNREFUSED", true) ->
-                "Porta chiusa: ricorda che la porta di connessione e' diversa da quella del pairing"
+                "Porta chiusa: la porta di connessione e' diversa da quella del pairing"
             raw.contains("ETIMEDOUT", true) || raw.contains("timeout", true) ->
-                "Timeout: orologio non raggiungibile su questa rete Wi-Fi"
+                "Timeout: orologio non raggiungibile su questa rete"
             raw.contains("EHOSTUNREACH", true) || raw.contains("ENETUNREACH", true) ->
-                "Host non raggiungibile: telefono e orologio devono stare sulla stessa rete"
+                "Host non raggiungibile: stessa rete Wi-Fi per telefono e orologio"
             raw.contains("PairingRequired", true) || raw.contains("pairing", true) ->
-                "Abbinamento mancante o scaduto: rifai il pairing con un nuovo codice"
+                "Abbinamento mancante o scaduto: rifai il pairing"
             raw.contains("AuthenticationFailed", true) ->
-                "Autenticazione rifiutata dal daemon ADB dell'orologio"
+                "Autenticazione rifiutata dal daemon ADB"
             else -> raw
         }
     }

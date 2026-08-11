@@ -2,7 +2,9 @@ package com.peppedess.weardrop
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -20,6 +22,10 @@ private val LightColors = lightColorScheme(
     onSecondary = Color(0xFFFFFFFF),
     secondaryContainer = Color(0xFFD1E5F4),
     onSecondaryContainer = Color(0xFF091E28),
+    tertiary = Color(0xFF615A7C),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFE7DEFF),
+    onTertiaryContainer = Color(0xFF1D1736),
     error = Color(0xFFBA1A1A),
     onError = Color(0xFFFFFFFF),
     errorContainer = Color(0xFFFFDAD6),
@@ -30,7 +36,8 @@ private val LightColors = lightColorScheme(
     onSurface = Color(0xFF191C1E),
     surfaceVariant = Color(0xFFDCE3E9),
     onSurfaceVariant = Color(0xFF40484C),
-    outline = Color(0xFF70787D)
+    outline = Color(0xFF70787D),
+    outlineVariant = Color(0xFFC0C8CD)
 )
 
 private val DarkColors = darkColorScheme(
@@ -42,6 +49,10 @@ private val DarkColors = darkColorScheme(
     onSecondary = Color(0xFF20333E),
     secondaryContainer = Color(0xFF364955),
     onSecondaryContainer = Color(0xFFD1E5F4),
+    tertiary = Color(0xFFCBC1E9),
+    onTertiary = Color(0xFF322C4C),
+    tertiaryContainer = Color(0xFF484264),
+    onTertiaryContainer = Color(0xFFE7DEFF),
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
     errorContainer = Color(0xFF93000A),
@@ -52,9 +63,11 @@ private val DarkColors = darkColorScheme(
     onSurface = Color(0xFFE1E2E5),
     surfaceVariant = Color(0xFF40484C),
     onSurfaceVariant = Color(0xFFC0C8CD),
-    outline = Color(0xFF8A9297)
+    outline = Color(0xFF8A9297),
+    outlineVariant = Color(0xFF40484C)
 )
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WearDropTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -70,8 +83,9 @@ fun WearDropTheme(
         else -> LightColors
     }
 
-    MaterialTheme(
+    MaterialExpressiveTheme(
         colorScheme = colorScheme,
+        motionScheme = MotionScheme.expressive(),
         content = content
     )
 }

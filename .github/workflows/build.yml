@@ -19,22 +19,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17 (Temurin)
+      - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Setup Gradle 8.9
+      - name: Setup Gradle 8.14.3
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.14.3'
 
       - name: Rigenera il Gradle Wrapper
-        run: gradle wrapper --gradle-version 8.9 --distribution-type bin
+        run: gradle wrapper --gradle-version 8.14.3 --distribution-type bin
 
       - name: Permessi esecuzione gradlew
         run: chmod +x ./gradlew

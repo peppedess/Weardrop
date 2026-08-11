@@ -2,12 +2,11 @@ package com.weardrop.app
 
 import android.content.Context
 import android.net.Uri
+import dev.mobile.dadb.Dadb
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.net.Socket
 
 class AdbInstaller(private val context: Context) {
 
@@ -17,16 +16,12 @@ class AdbInstaller(private val context: Context) {
                 onStatusUpdate("Preparazione file APK...")
                 val tempFile = createTempApkFile(apkUri) ?: throw Exception("Impossibile leggere l'APK")
 
-                onStatusUpdate("Verifica connessione a $ip:$port...")
-                try {
-                    val socket = Socket(ip, port)
-                    socket.close()
-                } catch (e: Exception) {
-                    throw Exception("Impossibile raggiungere $ip:$port. Verifica il Wi-Fi e il debug ADB.")
+                onStatusUpdate("Connessione a $ip:$port...")
+                // Dadb gestisce la connessione e l'installazione nativa
+                Dadb.create(ip, port).use { dadb ->
+                    onStatusUpdate("Installazione su Wear OS in corso...")
+                    dadb.install(tempFile)
                 }
-
-                onStatusUpdate("Invio e installazione APK in corso...")
-                delay(2000)
 
                 tempFile.delete()
                 onStatusUpdate("Installato con successo!")
